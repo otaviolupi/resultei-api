@@ -1,4 +1,4 @@
-from PIL import Image
+from PIL import Image, ImageOps
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png"}
 MAX_FILE_SIZE_MB = 10
@@ -31,12 +31,17 @@ def validate_dimensions(image: Image.Image):
 
 
 def resize_for_processing(image: Image.Image, target: int = WORK_RESOLUTION) -> Image.Image:
-    """Redimensiona mantendo aspecto e adiciona padding branco para quadrado perfeito."""
-    w, h = image.size
-    ratio = target / max(w, h)
-    new_w, new_h = int(w * ratio), int(h * ratio)
-    image = image.resize((new_w, new_h), Image.LANCZOS)
+    image = ImageOps.exif_transpose(image).convert("RGB")
 
-    canvas = Image.new("RGB", (target, target), (255, 255, 255))
-    canvas.paste(image, ((target - new_w) // 2, (target - new_h) // 2))
-    return canvas
+    w, h = image.size
+    min_side = min(w, h)
+
+    left = (w - min_side) // 2
+    top = (h - min_side) // 2
+    right = left + min_side
+    bottom = top + min_side
+
+    image = image.crop((left, top, right, bottom))
+    image = image.resize((target, target), Image.LANCZOS)
+
+    return image

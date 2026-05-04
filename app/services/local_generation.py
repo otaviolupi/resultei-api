@@ -4,8 +4,8 @@ import numpy as np
 
 PROCEDURE_PROMPTS = {
     "lip_filler": {
-        "positive": "natural human lips, realistic mouth, detailed lips texture, skin texture, photorealistic, detailed face, professional portrait, same person",
-        "negative": "black area, empty space, missing mouth, distorted face, deformed lips, cartoon, unrealistic, blur, low quality",
+        "positive": "subtle natural lips enhancement, same mouth shape, realistic lips texture, photorealistic skin, preserve identity",
+        "negative": "deformed lips, distorted mouth, fake lips, overfilled lips, black area, missing mouth, cartoon, unrealistic, blurry, low quality",
     },
     "nose_reshape": {
         "positive": "subtle rhinoplasty result, refined nose bridge, natural proportions, realistic skin, photorealistic",
@@ -40,12 +40,12 @@ PROCEDURE_PROMPTS = {
 _pipeline = None
 
 
-def load_pipeline(device="cuda", precision="fp16"):
+def load_pipeline(device="cuda", precision="fp32"):
     global _pipeline
 
     from diffusers import StableDiffusionInpaintPipeline
 
-    torch_dtype = torch.float16 if precision == "fp16" else torch.float32
+    torch_dtype = torch.float32
 
     print("Carregando runwayml/stable-diffusion-inpainting...")
 
@@ -87,7 +87,7 @@ def run_inpainting(
     import cv2
     mask_512 = Image.fromarray(mask_array).convert("L")
 
-    strength = 0.08 + (intensity * 0.10)
+    strength = 0.04 + (intensity * 0.08)
 
     with torch.inference_mode():
         result = pipe(
@@ -95,12 +95,11 @@ def run_inpainting(
             negative_prompt=prompts["negative"],
             image=image_512,
             mask_image=mask_512,
-            inpaint_full_res=True,
             height=512,
             width=512,
             strength=strength,
             num_inference_steps=50,
-            guidance_scale=6.5,
+            guidance_scale=4.0,
             generator=torch.Generator("cuda").manual_seed(42),
         ).images[0]
 

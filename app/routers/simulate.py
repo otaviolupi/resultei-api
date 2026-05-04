@@ -57,10 +57,11 @@ async def simulate(
     # Detecção facial
     image_np = np.array(image_pil)
     # MediaPipe espera BGR
-    image_bgr = image_np[:, :, ::-1].copy()
     try:
         mask_np = face_detection.generate_mask(image_np, procedure)
-        
+
+        Image.fromarray(mask_np).save("debug_01_mask.png")
+
         from PIL import Image as PILImage
         import os
         os.makedirs("static/debug", exist_ok=True)
@@ -76,8 +77,11 @@ async def simulate(
 
     result_pil = local_generation.run_inpainting(pipe, image_pil, mask_np, procedure, intensity)
 
+    result_pil.save("debug_02_result_before_blend.png")
+
     # Pós-processamento
     final_pil = postprocess.blend_result(image_pil, result_pil, mask_np)
+    final_pil.save("debug_03_final_after_blend.png")
     comparison_pil = postprocess.create_side_by_side(image_pil, final_pil)
 
     # Storage local

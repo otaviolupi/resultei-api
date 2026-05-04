@@ -4,8 +4,8 @@ import numpy as np
 
 PROCEDURE_PROMPTS = {
     "lip_filler": {
-        "positive": "natural lip filler result, slightly fuller lips, realistic skin texture, professional photography, photorealistic",
-        "negative": "cartoon, anime, unrealistic, clown lips, overdone, fake, plastic, distorted face, black, dark",
+        "positive": "natural human lips, realistic mouth, detailed lips texture, skin texture, photorealistic, detailed face, professional portrait, same person",
+        "negative": "black area, empty space, missing mouth, distorted face, deformed lips, cartoon, unrealistic, blur, low quality",
     },
     "nose_reshape": {
         "positive": "subtle rhinoplasty result, refined nose bridge, natural proportions, realistic skin, photorealistic",
@@ -85,11 +85,9 @@ def run_inpainting(
     mask_array = np.array(mask_512)
     # Dilata a máscara para dar mais contexto ao modelo
     import cv2
-    kernel = np.ones((20, 20), np.uint8)
-    mask_expanded = cv2.dilate(mask_array, kernel, iterations=3)
-    mask_512 = Image.fromarray(mask_expanded).convert("L")
+    mask_512 = Image.fromarray(mask_array).convert("L")
 
-    strength = 0.55 + (intensity * 0.2)  # 0.55 a 0.75
+    strength = 0.08 + (intensity * 0.10)
 
     with torch.inference_mode():
         result = pipe(
@@ -97,11 +95,12 @@ def run_inpainting(
             negative_prompt=prompts["negative"],
             image=image_512,
             mask_image=mask_512,
+            inpaint_full_res=True,
             height=512,
             width=512,
             strength=strength,
             num_inference_steps=50,
-            guidance_scale=7.5,
+            guidance_scale=6.5,
             generator=torch.Generator("cuda").manual_seed(42),
         ).images[0]
 

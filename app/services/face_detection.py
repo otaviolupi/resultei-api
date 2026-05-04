@@ -56,7 +56,7 @@ def generate_mask(image_np: np.ndarray, procedure: str) -> np.ndarray:
             min_detection_confidence=0.5,
         ) as face_mesh:
             rgb = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-            results = face_mesh.process(image_np)
+            results = face_mesh.process(rgb)
             return _build_mask(results, image_np, procedure)
     except AttributeError:
         # Fallback: API nova do mediapipe

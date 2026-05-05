@@ -6,8 +6,8 @@ from io import BytesIO
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
 from PIL import Image
 
-from app.services import face_detection, local_generation, postprocess, storage
-from app.services.local_generation import get_pipeline
+from app.services import face_detection, postprocess, storage
+from app.services.morph_transform import apply_procedure, WARP_PROCEDURES, TEXTURE_PROCEDURES
 from app.models.schemas import SimulateResponse, ImageResult
 from app.db import crud
 from app.utils.image_utils import (
@@ -26,13 +26,12 @@ async def simulate(
     image: UploadFile = File(...),
     procedure: str = Form(...),
     intensity: float = Form(0.5, ge=0.0, le=1.0),
-    mode: str = Form("fast"),  # default fast — sem Replicate por enquanto
+    mode: str = Form("fast"),
 ):
     start = time.time()
 
-    # Validações
+    # --- Validações ---
     validate_image_format(image.content_type)
-
     contents = await image.read()
     validate_file_size(len(contents))
 
@@ -43,7 +42,6 @@ async def simulate(
                    f"Opções: {', '.join(VALID_PROCEDURES)}",
         )
 
-    # Decodifica
     try:
         image_pil = Image.open(BytesIO(contents)).convert("RGB")
     except Exception:
@@ -53,41 +51,44 @@ async def simulate(
     image_pil = resize_for_processing(image_pil)
 
     job_id = str(uuid.uuid4())
-
-    # Detecção facial
     image_np = np.array(image_pil)
-    # MediaPipe espera BGR
+
+    # --- Detecção facial (uma só vez) ---
     try:
-        mask_np = face_detection.generate_mask(image_np, procedure)
-
-        Image.fromarray(mask_np).save("debug_01_mask.png")
-
-        from PIL import Image as PILImage
-        import os
-        os.makedirs("static/debug", exist_ok=True)
-        PILImage.fromarray(mask_np).save("static/debug/mask_debug.png")
-        PILImage.fromarray(image_np).save("static/debug/image_debug.png")
+        landmarks = face_detection.get_landmarks(image_np)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Geração
-    pipe = get_pipeline()
-    if pipe is None:
-        raise HTTPException(status_code=503, detail="Modelo não carregado ainda.")
+    # --- Aplicar procedimento ---
+    try:
+        result_pil = apply_procedure(image_pil, landmarks, procedure, intensity)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao processar imagem: {str(e)}")
 
-    result_pil = local_generation.run_inpainting(pipe, image_pil, mask_np, procedure, intensity)
+    # --- Gerar máscara para blend final ---
+    # Procedimentos de textura já fazem blend internamente — máscara None pula seamless clone
+    if procedure in WARP_PROCEDURES:
+        if procedure == 'lip_filler':
+            # lip_filler faz blend interno (warp localizado) — mask None pula blend externo
+            mask_np = None
+        else:
+            mask_np = face_detection.generate_mask(
+                image_np, procedure,
+                landmarks=landmarks,
+                dilate_px=12,
+                blur_px=19,
+            )
+    else:
+        mask_np = None  # eye_bags e skin_smooth ja retornam imagem blendada
 
-    result_pil.save("debug_02_result_before_blend.png")
+    # --- Pós-processamento ---
+    final_pil = postprocess.blend_result(image_pil, result_pil, mask_np, procedure=procedure)
+    comparison_pil = postprocess.create_side_by_side(image_pil, final_pil, label=True)
 
-    # Pós-processamento
-    final_pil = postprocess.blend_result(image_pil, result_pil, mask_np)
-    final_pil.save("debug_03_final_after_blend.png")
-    comparison_pil = postprocess.create_side_by_side(image_pil, final_pil)
-
-    # Storage local
-    original_url = storage.upload_image(image_pil, "original", job_id, "orig")
-    result_url = storage.upload_image(final_pil, "result", job_id, "result")
-    comparison_url = storage.upload_image(comparison_pil, "comparison", job_id, "compare")
+    # --- Storage ---
+    original_url   = storage.upload_image(image_pil,     "original",    job_id, "orig")
+    result_url     = storage.upload_image(final_pil,     "result",      job_id, "result")
+    comparison_url = storage.upload_image(comparison_pil,"comparison",  job_id, "compare")
 
     ms = int((time.time() - start) * 1000)
 
